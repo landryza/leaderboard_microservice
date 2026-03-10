@@ -1,41 +1,154 @@
+# leaderboard_microservice
 
-# Leaderboard Microservice — Biggest Single Win
+This microservice tracks **biggest single win** records for game(s). It supports a global scope and optional per-`gameId` scopes.
 
-A FastAPI service to **record** and **fetch** the biggest single win, optionally scoped by `gameId`. Designed to meet your user stories:
+**Features**
+- Record a win if it **exceeds** the current record (ties keep original holder)
+- Retrieve the current biggest win for a scope
+- Simple health and ping endpoints
+- Interactive API docs at **`/docs`** (FastAPI Swagger UI)
 
-- **See Biggest Win**: `GET /leaderboard/biggest-win?gameId=...`
-- **Biggest Win Recording**: `POST /leaderboard/record` (updates **only** when `amount` is strictly greater; ties keep original)
+---
 
-## Endpoints
-- `GET /healthz` → quick liveness probe
-- `POST /ping`   → echo utility
-- `GET /leaderboard/biggest-win?gameId=slot1` → returns `{ amount, gameId, updated_at }` or 404 if none
-- `POST /leaderboard/record` with JSON body `{ "amount": 123, "gameId": "slot1" }` → returns `{ updated, amount, gameId, updated_at }`
+## 1) Health Check
+Quick liveness check.
 
-## Windows PowerShell Run
+**Method**: `GET`
+
+**Route**: `/healthz`
+
+**Example**
+```bash
+curl -s http://127.0.0.1:8090/healthz | jq
 ```
-cd <folder>
-python -m venv .venv
-. .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install fastapi uvicorn pydantic
-uvicorn leaderboard_service_min:app --host 127.0.0.1 --port 8090 --reload
+
+**Sample Response**
+```json
+{
+  "status": "ok",
+  "service": "leaderboard",
+  "version": "0.1.0"
+}
 ```
 
-## Quick tests
+---
+
+## 2) Ping (Echo)
+Connectivity / round‑trip test; echoes any JSON you send.
+
+**Method**: `POST`
+
+**Route**: `/ping`
+
+**Request Body (optional)**
+```json
+{ "hello": "world" }
 ```
-# health
-curl http://127.0.0.1:8090/healthz
 
-# reading when no record yet (returns 404)
-curl "http://127.0.0.1:8090/leaderboard/biggest-win?gameId=global"
+**Example**
+```bash
+curl -s -X POST http://127.0.0.1:8090/ping \
+  -H "Content-Type: application/json" \
+  -d '{"hello":"world"}' | jq
+```
 
-# record a win (creates)
-curl -X POST http://127.0.0.1:8090/leaderboard/record -H "Content-Type: application/json" -d '{"amount": 250, "gameId": "global"}'
+**Sample Response**
+```json
+{ "pong": true, "echo": { "hello": "world" } }
+```
 
-# record a tie (no update)
-curl -X POST http://127.0.0.1:8090/leaderboard/record -H "Content-Type: application/json" -d '{"amount": 250, "gameId": "global"}'
+---
 
-# fetch biggest win
-curl "http://127.0.0.1:8090/leaderboard/biggest-win?gameId=global"
+## 3) Get Biggest Win (per scope)
+Returns the biggest single win for the requested scope. If `gameId` is omitted or blank, the **`global`** scope is used.
+
+**Method**: `GET`
+
+**Route**: `/leaderboard/biggest-win`
+
+**Query Params**
+- `gameId` *(optional, string)* — scope key; defaults to `global` when omitted or empty.
+
+**Example (global scope)**
+```bash
+curl -s "http://127.0.0.1:8090/leaderboard/biggest-win" | jq
+```
+
+**Example (per-game scope)**
+```bash
+curl -s "http://127.0.0.1:8090/leaderboard/biggest-win?gameId=spinning_sevens" | jq
+```
+
+**Successful Response**
+```json
+{
+  "amount": 2500,
+  "gameId": "spinning_sevens",
+  "updated_at": 1739222112345678900
+}
+```
+
+**Errors**
+- `404` — no record exists yet for this scope.
+
+---
+
+## 4) Record a Win (only if new record)
+Creates/updates the record **iff** the submitted `amount` is **strictly greater** than the current record for that scope.
+
+**Method**: `POST`
+
+**Route**: `/leaderboard/record`
+
+**Request Body**
+```json
+{
+  "amount": 2500,
+  "gameId": "spinning_sevens"   // optional; defaults to global
+}
+```
+
+**Example (first write creates the record)**
+```bash
+curl -s -X POST http://127.0.0.1:8090/leaderboard/record \
+  -H "Content-Type: application/json" \
+  -d '{"amount":2500, "gameId":"spinning_sevens"}' | jq
+```
+
+**Sample Response (created/updated)**
+```json
+{
+  "updated": true,
+  "amount": 2500,
+  "gameId": "spinning_sevens",
+  "updated_at": 1739222112345678900
+}
+```
+
+**Sample Response (tie or lower — unchanged)**
+```json
+{
+  "updated": false,
+  "amount": 2500,
+  "gameId": "spinning_sevens",
+  "updated_at": 1739222112345678900
+}
+```
+
+---
+
+## UML Sequence Diagram:
+```
+sequenceDiagram
+    participant Client
+    participant Leaderboard as LeaderboardService
+
+    Client->>Leaderboard: POST /leaderboard/record {amount: 1200, gameId: "spinning_sevens"}
+    Leaderboard-->>Client: 200 OK {updated: true, ...}
+
+    Client->>Leaderboard: POST /leaderboard/record {amount: 900, gameId: "spinning_sevens"}
+    Leaderboard-->>Client: 200 OK {updated: false, amount: 1200, ...}
+
+    Client->>Leaderboard: GET /leaderboard/biggest-win?gameId=spinning_sevens
+    Leaderboard-->>Client: 200 OK {amount: 1200, gameId: "spinning_sevens", ...}
 ```
