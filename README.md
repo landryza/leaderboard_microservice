@@ -1,29 +1,24 @@
-# leaderboard_microservice
+# Leaderboard Microservice
 
-This microservice tracks **biggest single win** records for game(s). It supports a global scope and optional per-`gameId` scopes.
+## Description
+The Leaderboard Microservice tracks the **biggest single win** recorded for a game. It allows other applications (main programs or microservices) to read the current record and submit a new win amount. The record is updated only when a submitted win exceeds the existing value.citeturn1search1
 
-**Features**
-- Record a win if it **exceeds** the current record (ties keep original holder)
-- Retrieve the current biggest win for a scope
-- Simple health and ping endpoints
-- Interactive API docs at **`/docs`** (FastAPI Swagger UI)
+If a `gameId` is omitted, the service uses the default `global` leaderboard.citeturn1search1
 
 ---
 
-## 1) Health Check
-Quick liveness check.
+# Endpoints
 
-**Method**: `GET`
+# 1. Health Check
+GET /healthz
 
-**Route**: `/healthz`
+Used to verify that the microservice is running.citeturn1search1
 
-**Example**
-```bash
-curl -s http://127.0.0.1:8090/healthz | jq
+Example Request:
+GET /healthz
+
+Example Response:
 ```
-
-**Sample Response**
-```json
 {
   "status": "ok",
   "service": "leaderboard",
@@ -33,54 +28,17 @@ curl -s http://127.0.0.1:8090/healthz | jq
 
 ---
 
-## 2) Ping (Echo)
-Connectivity / round‑trip test; echoes any JSON you send.
+# 2. Get Biggest Win
+GET /leaderboard/biggest-win
 
-**Method**: `POST`
+Retrieves the biggest win stored for a given scope.
+If `gameId` is omitted, the `global` scope is used.citeturn1search1
 
-**Route**: `/ping`
+Example Request:
+GET /leaderboard/biggest-win?gameId=spinning_sevens
 
-**Request Body (optional)**
-```json
-{ "hello": "world" }
+Example Response:
 ```
-
-**Example**
-```bash
-curl -s -X POST http://127.0.0.1:8090/ping \
-  -H "Content-Type: application/json" \
-  -d '{"hello":"world"}' | jq
-```
-
-**Sample Response**
-```json
-{ "pong": true, "echo": { "hello": "world" } }
-```
-
----
-
-## 3) Get Biggest Win (per scope)
-Returns the biggest single win for the requested scope. If `gameId` is omitted or blank, the **`global`** scope is used.
-
-**Method**: `GET`
-
-**Route**: `/leaderboard/biggest-win`
-
-**Query Params**
-- `gameId` *(optional, string)* — scope key; defaults to `global` when omitted or empty.
-
-**Example (global scope)**
-```bash
-curl -s "http://127.0.0.1:8090/leaderboard/biggest-win" | jq
-```
-
-**Example (per-game scope)**
-```bash
-curl -s "http://127.0.0.1:8090/leaderboard/biggest-win?gameId=spinning_sevens" | jq
-```
-
-**Successful Response**
-```json
 {
   "amount": 2500,
   "gameId": "spinning_sevens",
@@ -88,35 +46,33 @@ curl -s "http://127.0.0.1:8090/leaderboard/biggest-win?gameId=spinning_sevens" |
 }
 ```
 
-**Errors**
-- `404` — no record exists yet for this scope.
-
----
-
-## 4) Record a Win (only if new record)
-Creates/updates the record **iff** the submitted `amount` is **strictly greater** than the current record for that scope.
-
-**Method**: `POST`
-
-**Route**: `/leaderboard/record`
-
-**Request Body**
-```json
+Error Example:
+```
 {
-  "amount": 2500,
-  "gameId": "spinning_sevens"   // optional; defaults to global
+  "detail": "no record yet for this scope"
 }
 ```
 
-**Example (first write creates the record)**
-```bash
-curl -s -X POST http://127.0.0.1:8090/leaderboard/record \
-  -H "Content-Type: application/json" \
-  -d '{"amount":2500, "gameId":"spinning_sevens"}' | jq
+---
+
+# 3. Record a Win
+POST /leaderboard/record
+
+Submits a new win value for a scope. The record only updates if the new amount is **strictly greater** than the current record. Ties do not overwrite.citeturn1search1
+
+Example Request:
+POST /leaderboard/record
+
+Body:
+```
+{
+  "amount": 2500,
+  "gameId": "spinning_sevens"
+}
 ```
 
-**Sample Response (created/updated)**
-```json
+Example Response (updated):
+```
 {
   "updated": true,
   "amount": 2500,
@@ -125,8 +81,8 @@ curl -s -X POST http://127.0.0.1:8090/leaderboard/record \
 }
 ```
 
-**Sample Response (tie or lower — unchanged)**
-```json
+Example Response (not updated — tie or smaller):
+```
 {
   "updated": false,
   "amount": 2500,
@@ -137,18 +93,105 @@ curl -s -X POST http://127.0.0.1:8090/leaderboard/record \
 
 ---
 
-## UML Sequence Diagram:
+# Communication Contract
+
+# Requesting Data
+To request data from the Leaderboard Microservice:
+
+1. Send an HTTP request to the appropriate endpoint.
+2. For leaderboard operations, optionally include a `gameId` query parameter.
+3. For recording wins, include a JSON body containing `amount` and optional `gameId`.citeturn1search1
+
+Example (Python):
+```python
+import requests
+
+response = requests.get("http://127.0.0.1:8090/leaderboard/biggest-win")
+print(response.json())
 ```
-sequenceDiagram
-    participant Client
-    participant Leaderboard as LeaderboardService
 
-    Client->>Leaderboard: POST /leaderboard/record {amount: 1200, gameId: "spinning_sevens"}
-    Leaderboard-->>Client: 200 OK {updated: true, ...}
+---
 
-    Client->>Leaderboard: POST /leaderboard/record {amount: 900, gameId: "spinning_sevens"}
-    Leaderboard-->>Client: 200 OK {updated: false, amount: 1200, ...}
+# Receiving Data
+The microservice responds with JSON data.
 
-    Client->>Leaderboard: GET /leaderboard/biggest-win?gameId=spinning_sevens
-    Leaderboard-->>Client: 200 OK {amount: 1200, gameId: "spinning_sevens", ...}
+Example response format:
 ```
+{
+  "amount": 2500,
+  "gameId": "global",
+  "updated_at": 1739222112345678900
+}
+```
+
+Example handling in Python:
+```python
+data = response.json()
+print("Scope:", data["gameId"])
+print("Record:", data["amount"])
+```
+
+---
+
+# UML Sequence Diagram
+```
+Main Program        Leaderboard Microservice
+     |                      |
+     |---- POST /leaderboard/record --------------------->|
+     |                      |---- Compare & Update ------>|
+     |                      |<--- JSON {updated:true} ----|
+     |<--- JSON Response ---|                             |
+     |                      |
+     |---- GET /leaderboard/biggest-win ----------------->|
+     |                      |---- Fetch Record ---------->|
+     |                      |<--- JSON {amount:X} --------|
+     |<--- JSON Response ---|                             |
+```
+
+---
+
+# How to Run the Microservice
+
+1. Install dependencies:
+```
+pip install fastapi uvicorn pydantic
+```
+
+2. Start the server:
+```
+uvicorn leaderboard_microservice:app --reload --port 8090
+```
+
+3. Open in browser:
+```
+http://127.0.0.1:8090/docs
+```
+
+---
+
+# Test Program Example
+```python
+import requests
+
+BASE = "http://127.0.0.1:8090"
+
+# Record a new win
+r = requests.post(f"{BASE}/leaderboard/record", json={"amount": 1200, "gameId": "spinning_sevens"})
+print("Record attempt:", r.json())
+
+# Attempt a smaller win
+r = requests.post(f"{BASE}/leaderboard/record", json={"amount": 800, "gameId": "spinning_sevens"})
+print("Smaller win attempt:", r.json())
+
+# Get current record
+r = requests.get(f"{BASE}/leaderboard/biggest-win?gameId=spinning_sevens")
+print("Current record:", r.json())
+```
+
+---
+
+## Notes
+- All communication is done using JSON over HTTP.
+- Records only update when the new amount is strictly greater than the current stored value.citeturn1search1
+- Omitted or empty `gameId` defaults to `global`.citeturn1search1
+- In-memory storage resets on restart.
